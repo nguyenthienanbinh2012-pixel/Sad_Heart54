@@ -299,6 +299,28 @@ local function FindMiscTab()
     return AntiLeft.Parent or AntiRight.Parent
 end
 
+local function FindVisualTab()
+    if Svc.VisualTab then return Svc.VisualTab end
+    local A = getgenv().Abysall
+    if A then
+        local Tabs = A.Tabs or (A.Window and A.Window.Tabs)
+        if Tabs and Tabs.Visual then return Tabs.Visual end
+    end
+    local root = AntiLeft
+    while root and root.Parent do root = root.Parent end
+    if root then
+        for _, desc in ipairs(root:GetDescendants()) do
+            if desc:IsA("TextButton") or desc:IsA("TextLabel") then
+                if desc.Name == "Visual" or desc.Text == "Visual" then
+                    local tab = desc.Parent and desc.Parent.Parent
+                    if tab then return tab end
+                end
+            end
+        end
+    end
+    return nil
+end
+
 local MiscTab = FindMiscTab()
 local HotelsBox = MiscTab:AddRightGroupbox("Hotels")
 local MineBox = MiscTab:AddLeftGroupbox("The Mine")
@@ -317,6 +339,151 @@ task.spawn(function()
     ReplaceIcon(HotelsBox, "rbxassetid://6031075936")
     ReplaceIcon(MineBox, "rbxassetid://6031091004")
 end)
+
+local VisualTab = FindVisualTab()
+if VisualTab then
+    local VfxBox = VisualTab:AddRightGroupbox("Effects & Protection", "eye")
+    local vfx = { enabled = false, transparency = 0.5, saved = {} }
+
+    local function vfxApplyHiding()
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("Model") then
+                local n = obj.Name:lower()
+                if n:find("wardrobe") or n:find("closet") or n:find("locker") or n:find("hide") then
+                    local hidden = obj:FindFirstChild("HiddenPlayer", true)
+                    local isHiding = hidden and hidden.Value == LocalPlayer.Character
+                    for _, p in ipairs(obj:GetDescendants()) do
+                        if p:IsA("BasePart") then
+                            if vfx.saved[p] == nil then vfx.saved[p] = p.Transparency end
+                            p.Transparency = (vfx.enabled and isHiding) and vfx.transparency or vfx.saved[p]
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    VfxBox:AddToggle("VfxTransparentHiding", {
+        Text = "Transparent Hiding Spots",
+        Default = false,
+        Tooltip = "Tu trong suot khi ban dang tron ben trong.",
+    }):OnChanged(function(v)
+        vfx.enabled = v
+        if not v then
+            for part, orig in pairs(vfx.saved) do
+                if part and part.Parent then pcall(function() part.Transparency = orig end) end
+            end
+            vfx.saved = {}
+        else
+            vfxApplyHiding()
+        end
+    end)
+
+    VfxBox:AddSlider("VfxTransparencySlider", {
+        Text = "Transparency",
+        Min = 0, Max = 1, Default = 0.5,
+        Rounding = 2, Compact = true,
+    }):OnChanged(function(v)
+        vfx.transparency = v
+        if vfx.enabled then vfxApplyHiding() end
+    end)
+
+    VfxBox:AddDivider()
+
+    local function disableModule(name, disable)
+        local ui = LocalPlayer.PlayerGui:FindFirstChild("MainUI")
+        local rl = ui and ui:FindFirstChild("Initiator") and ui.Initiator:FindFirstChild("Main_Game")
+            and ui.Initiator.Main_Game:FindFirstChild("RemoteListener")
+        if not rl then return end
+        local mods = rl:FindFirstChild("Modules")
+        if not mods then return end
+        local m = mods:FindFirstChild(name) or mods:FindFirstChild(name .. "_Disabled")
+        if m then
+            if not m:GetAttribute("OrigName") then m:SetAttribute("OrigName", name) end
+            m.Name = disable and (name .. "_Disabled") or name
+        end
+    end
+
+    VfxBox:AddToggle("VfxDisableGlitchJumpscare", {
+        Text = "Disable Glitch Jumpscare",
+        Default = false,
+    }):OnChanged(function(v) pcall(disableModule, "Glitch", v) end)
+
+    VfxBox:AddToggle("VfxDisableTimothyJumpscare", {
+        Text = "Disable Timothy Jumpscare",
+        Default = false,
+    }):OnChanged(function(v) pcall(disableModule, "SpiderJumpscare", v) end)
+
+    VfxBox:AddToggle("VfxDisableVoidJumpscare", {
+        Text = "Disable Void Jumpscare",
+        Default = false,
+    }):OnChanged(function(v) pcall(disableModule, "Void", v) end)
+
+    VfxBox:AddToggle("VfxDisableHideVignette", {
+        Text = "Disable Hide Vignette",
+        Default = false,
+    }):OnChanged(function(v)
+        local ui = LocalPlayer.PlayerGui:FindFirstChild("MainUI")
+        local mf = ui and ui:FindFirstChild("MainFrame")
+        local vig = ui and ui:FindFirstChild("HideVignette") or (mf and mf:FindFirstChild("HideVignette"))
+        if vig then
+            if v then
+                if not vig:GetAttribute("OrigImage") then vig:SetAttribute("OrigImage", vig.Image) end
+                vig.Image = "Disabled"
+            else
+                local orig = vig:GetAttribute("OrigImage") or "rbxassetid://6100076320"
+                vig.Image = orig
+            end
+        end
+    end)
+
+    VfxBox:AddToggle("VfxDisableFiredamp", {
+        Text = "Disable Firedamp Effect",
+        Default = false,
+    }):OnChanged(function(v)
+        local cr = Workspace:FindFirstChild("CurrentRooms")
+        if not cr then return end
+        for _, room in ipairs(cr:GetChildren()) do
+            if v then
+                if room:GetAttribute("Firedamp") ~= nil then
+                    if not room:GetAttribute("Firedamp_Old") then
+                        room:SetAttribute("Firedamp_Old", room:GetAttribute("Firedamp"))
+                    end
+                    room:SetAttribute("Firedamp", false)
+                end
+                local cam = Workspace.CurrentCamera
+                for _, c in ipairs(cam:GetChildren()) do
+                    if c.Name == "LiveFiredamp" then c:Destroy() end
+                end
+            else
+                local old = room:GetAttribute("Firedamp_Old")
+                if old ~= nil then room:SetAttribute("Firedamp", old) end
+            end
+        end
+    end)
+
+    VfxBox:AddToggle("VfxDisableEntityJumpscares", {
+        Text = "Disable Entity Jumpscares",
+        Default = false,
+    }):OnChanged(function(v)
+        local ui = LocalPlayer.PlayerGui:FindFirstChild("MainUI")
+        local rl = ui and ui:FindFirstChild("Initiator") and ui.Initiator:FindFirstChild("Main_Game")
+            and ui.Initiator.Main_Game:FindFirstChild("RemoteListener")
+        if not rl then return end
+        local js = rl:FindFirstChild("Jumpscares") or rl:FindFirstChild("Jumpscares_Disabled")
+        if js then js.Name = v and "Jumpscares_Disabled" or "Jumpscares" end
+        local mods = rl:FindFirstChild("Modules")
+        if mods then
+            for _, m in ipairs(mods:GetChildren()) do
+                if m.Name:find("Jumpscare") and not m.Name:find("Eyestalk") and not m.Name:find("Groundskeeper") and not m.Name:find("Monument") then
+                    if not m:GetAttribute("OrigName") then m:SetAttribute("OrigName", m.Name) end
+                    local orig = m:GetAttribute("OrigName")
+                    m.Name = v and (orig .. "_Disabled") or orig
+                end
+            end
+        end
+    end)
+end
 
 local function GetLibraryCode()
     local char = LocalPlayer.Character
@@ -353,8 +520,7 @@ HotelsBox:AddToggle("MiscAutoBreakerBox", {
     MISC.breaker = v
     if v then
         local CR = Workspace:FindFirstChild("CurrentRooms")
-        local Breaker = CR and CR:FindFirstChild("ElevatorBreaker", true)
-        if Breaker then
+        local Breaker = CR and CR:FindFirstChild("ElevatorBreaker", true)        if Breaker then
             notify("Interact voi hop cau chi. No se tu giai.", 3)
             local sg = Breaker:FindFirstChild("SurfaceGui")
             if sg and sg:FindFirstChild("Frame") and sg.Frame:FindFirstChild("Code") then
