@@ -276,8 +276,30 @@ end)
 local Camera = Workspace.CurrentCamera
 local gd = ReplicatedStorage:FindFirstChild("GameData")
 local LatestRoom = gd and gd:FindFirstChild("LatestRoom")
-local MiscTab = AntiLeft.Parent or AntiRight.Parent
 
+local function FindMiscTab()
+    if Svc.MiscTab then return Svc.MiscTab end
+    local A = getgenv().Abysall
+    if A then
+        local Tabs = A.Tabs or (A.Window and A.Window.Tabs)
+        if Tabs and Tabs.Misc then return Tabs.Misc end
+    end
+    local root = AntiLeft
+    while root and root.Parent do root = root.Parent end
+    if root then
+        for _, desc in ipairs(root:GetDescendants()) do
+            if desc:IsA("TextButton") or desc:IsA("TextLabel") then
+                if desc.Name == "Misc" or desc.Text == "Misc" then
+                    local tab = desc.Parent and desc.Parent.Parent
+                    if tab then return tab end
+                end
+            end
+        end
+    end
+    return AntiLeft.Parent or AntiRight.Parent
+end
+
+local MiscTab = FindMiscTab()
 local HotelsBox = MiscTab:AddRightGroupbox("Hotels")
 local MineBox = MiscTab:AddLeftGroupbox("The Mine")
 
