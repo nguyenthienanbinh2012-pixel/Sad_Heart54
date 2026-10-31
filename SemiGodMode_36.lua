@@ -191,7 +191,7 @@ AntiRight:AddToggle("AP_InfRevive", {
         if not T.revive then return end
         if LocalPlayer:GetAttribute("Alive") == false and isOldFloor() then
             task.spawn(function()
-                while T.revive and LocalPlayer:GetAttribute("Alive") \~= true do
+                while T.revive and LocalPlayer:GetAttribute("Alive") ~= true do
                     local r = RF():FindFirstChild("Revive") or RF():FindFirstChild("Revive", true)
                     if r then pcall(function() r:FireServer() end) end
                     task.wait(0.5)
