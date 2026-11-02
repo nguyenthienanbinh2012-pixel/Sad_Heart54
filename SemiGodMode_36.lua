@@ -290,6 +290,7 @@ end
 end
 return nil
 end
+local MiscTab = FindMiscTab()
 local HotelsBox = MiscTab:AddRightGroupbox("Hotels","building")
 local MineBox = MiscTab:AddLeftGroupbox("The Mine","pickaxe")
 local HotelBox = MiscTab:AddLeftGroupbox("Auto Hotel")
