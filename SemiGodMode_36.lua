@@ -324,6 +324,190 @@ end
 local MiscTab = FindMiscTab()
 local HotelsBox = MiscTab:AddRightGroupbox("Hotels")
 local MineBox = MiscTab:AddLeftGroupbox("The Mine")
+-- ===== AUTO HOTEL (xịn - state machine) =====
+local RED = "#FF3232"
+local HotelBox = MiscTab:AddLeftGroupbox("Auto Hotel")
+
+local AH = {
+    Running = false,
+    State = "Idle",       -- Idle / OpenDoor / Hide / Wait / Revive
+    LastFire = 0,
+    LastDoor = nil,
+}
+
+local function AH_GetRoomData()
+    local GD = ReplicatedStorage:FindFirstChild("GameData")
+    local LR = GD and GD:FindFirstChild("LatestRoom")
+    return LR and LR.Value or 0
+end
+
+local function AH_GetNextDoor()
+    local GD = ReplicatedStorage:FindFirstChild("GameData")
+    local LR = GD and GD:FindFirstChild("LatestRoom")
+    if not LR then return nil end
+    local Start, Best, BestNum = LR.Value, nil, math.huge
+    for _, Obj in ipairs(Workspace:GetDescendants()) do
+        if Obj.Name == "Door" and Obj:IsA("Model") then
+            local Open = Obj:GetAttribute("Open")
+            if Open == false or Open == nil then
+                local Num = tonumber(Obj.Parent and Obj.Parent.Name)
+                if Num and Num >= Start and Num < BestNum then
+                    BestNum, Best = Num, Obj
+                end
+            end
+        end
+    end
+    return Best
+end
+
+local function AH_GetNearestHidingSpot()
+    local Char = LocalPlayer.Character
+    if not Char or not Char.PrimaryPart then return nil end
+    local Best, BestDist = nil, math.huge
+    for _, Obj in ipairs(Workspace:GetDescendants()) do
+        local N = Obj.Name
+        if (N == "Wardrobe" or N == "Backdoor_Wardrobe" or N == "Locker_Large"
+            or N == "RetroWardrobe" or N == "Rooms_Locker" or N == "Bed"
+            or N == "Dumpster" or N == "CircularVent")
+            and Obj:IsA("Model") and Obj.PrimaryPart then
+            local Hidden = Obj:FindFirstChild("HiddenPlayer", true)
+            if Hidden and Hidden.Value == nil then
+                local D = (Char.PrimaryPart.Position - Obj.PrimaryPart.Position).Magnitude
+                if D < BestDist then BestDist, Best = D, Obj end
+            end
+        end
+    end
+    return Best
+end
+
+local function AH_GetNearestEntity()
+    local Char = LocalPlayer.Character
+    if not Char or not Char.PrimaryPart then return nil end
+    local Danger = { RushMoving=true, AmbushMoving=true, FigureRig=true,
+                     Figure=true, FigureRagdoll=true, A60=true, A120=true,
+                     BackdoorRush=true, GlitchRush=true, GlitchAmbush=true }
+    for _, Obj in ipairs(Workspace:GetChildren()) do
+        if Danger[Obj.Name] and Obj:IsA("Model") and Obj.PrimaryPart then
+            local D = (Char.PrimaryPart.Position - Obj.PrimaryPart.Position).Magnitude
+            if D < 100 then return Obj, D end
+        end
+    end
+    return nil
+end
+
+local function AH_FireHide()
+    local Spot = AH_GetNearestHidingSpot()
+    if not Spot then return false end
+    local Prompt = Spot:FindFirstChild("HidePrompt", true) or Spot:FindFirstChild("HidingPrompt", true)
+    if not Prompt then
+        for _, D in ipairs(Spot:GetDescendants()) do
+            if D:IsA("ProximityPrompt") and (D.Name == "HidePrompt" or D.Name == "HidingPrompt") then
+                Prompt = D break
+            end
+        end
+    end
+    if Prompt then
+        pcall(function() fireproximityprompt(Prompt) end)
+        return true
+    end
+    return false
+end
+
+local function AH_FireDoor(Door)
+    if not Door then return end
+    local ClientOpen = Door:FindFirstChild("ClientOpen")
+    if ClientOpen then
+        pcall(function() ClientOpen:FireServer() end)
+    end
+    pcall(function()
+        LocalPlayer.Character:PivotTo(Door:GetPivot())
+    end)
+end
+
+local function AH_IsHiding()
+    local Char = LocalPlayer.Character
+    return Char and Char:GetAttribute("Hiding") == true
+end
+
+local function AH_Tick()
+    if not AH.Running then return end
+    local Char = LocalPlayer.Character
+    if not Char then return end
+
+    -- 1) Nếu đang chết → revive
+    if LocalPlayer:GetAttribute("Alive") == false then
+        local RF = ReplicatedStorage:FindFirstChild("RemotesFolder")
+        local Revive = RF and RF:FindFirstChild("Revive")
+        if Revive then pcall(function() Revive:FireServer() end) end
+        return
+    end
+
+    -- 2) Nếu đang hiding thì đợi entity đi qua
+    if AH_IsHiding() then
+        local Entity = AH_GetNearestEntity()
+        if not Entity then
+            local RF = ReplicatedStorage:FindFirstChild("RemotesFolder")
+            local CamLock = RF and RF:FindFirstChild("CamLock")
+            if CamLock then pcall(function() CamLock:FireServer() end) end
+            AH.State = "Idle"
+        end
+        return
+    end
+
+    -- 3) Nếu có entity gần → trốn
+    local Entity = AH_GetNearestEntity()
+    if Entity then
+        if AH_FireHide() then
+            AH.State = "Hide"
+            return
+        end
+    end
+
+    -- 4) Mở cửa kế tiếp
+    if tick() - AH.LastFire > 0.15 then
+        AH.LastFire = tick()
+        local Door = AH_GetNextDoor()
+        if Door then
+            AH_FireDoor(Door)
+            AH.State = "OpenDoor"
+        else
+            AH.State = "Idle"
+        end
+    end
+end
+
+HotelBox:AddToggle("AP_AutoHotel", {
+    Text = "<font color='" .. RED .. "'>Auto Hotel</font>",
+    Default = false,
+    Tooltip = "Tự Màn Hotel.",
+}):OnChanged(function(v)
+    AH.Running = v
+    if v then
+        notify("<font color='" .. RED .. "'>Auto Hotel: BẬT</font>", 2)
+    end
+end)
+
+task.spawn(function()
+    while true do
+        task.wait(0.1)
+        if AH.Running then
+            pcall(AH_Tick)
+        end
+    end
+end)
+
+HotelBox:AddButton({
+    Text = "<font color='" .. RED .. "'>Teleport Next Door</font>",
+    DoubleClick = false,
+    Func = function()
+        local Door = AH_GetNextDoor()
+        local Char = LocalPlayer.Character
+        if Door and Char then
+            Char:PivotTo(Door:GetPivot())
+        end
+    end,
+})
+-- ===== END AUTO HOTEL =====
 
 task.spawn(function()
     task.wait(0.6)
