@@ -423,7 +423,7 @@ local function AH_GetNearestHidingSpot()
 
                 -- Bỏ qua spot đã có người
                 local hp = Obj:FindFirstChild("HiddenPlayer", true)
-                if hp and hp:IsA("ObjectValue") and hp.Value \~= nil and hp.Value \~= Char then
+                if hp and hp:IsA("ObjectValue") and hp.Value ~= nil and hp.Value \~= Char then
                     -- occupied
                 else
                     local pp = Obj.PrimaryPart or Obj:FindFirstChildWhichIsA("BasePart")
