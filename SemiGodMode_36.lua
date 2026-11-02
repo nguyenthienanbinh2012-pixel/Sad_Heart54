@@ -290,9 +290,9 @@ end
 end
 return nil
 end
-local MiscTab = FindMiscTab()
 local HotelsBox = MiscTab:AddRightGroupbox("Hotels","building")
-local MineBox = MiscTab:AddLeftGroupbox("The Mine","cave")
+local MineBox = MiscTab:AddLeftGroupbox("The Mine","pickaxe")
+local HotelBox = MiscTab:AddLeftGroupbox("Auto Hotel")
 
 -- ===== AUTO HOTEL (fixed) =====
 local RED = "#FF3232"
@@ -666,6 +666,55 @@ task.spawn(function()
     end
 end)
 -- ===== END AUTO HOTEL =====
+
+task.spawn(function()
+    task.wait(0.6)
+    local function ReplaceIcon(gb, glyph)
+        for _, d in gb:GetDescendants() do
+            if d:IsA("ImageLabel") and (d.Name == "Icon" or d.Name == "IconLabel" or d.Name == "Logo") then
+                d.Visible = false
+                d.ImageTransparency = 1
+                local L = Instance.new("TextLabel")
+                L.Name = "GlyphIcon"
+                L.BackgroundTransparency = 1
+                L.Size = d.Size
+                L.Position = d.Position
+                L.AnchorPoint = d.AnchorPoint
+                L.Font = Enum.Font.GothamBold
+                L.TextSize = 14
+                L.TextColor3 = Color3.fromRGB(255, 255, 255)
+                L.Text = glyph
+                L.Parent = d.Parent
+                return
+            end
+        end
+    end
+    pcall(ReplaceIcon, HotelsBox, "HOTEL")
+    pcall(ReplaceIcon, MineBox, "MINE")
+end)
+
+local VisualTab = FindVisualTab()
+if VisualTab then
+    local VfxBox = VisualTab:AddRightGroupbox("Effects & Protection", "eye")
+    local vfx = { enabled = false, transparency = 0.5, saved = {} }
+
+    local function vfxApplyHiding()
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("Model") then
+                local n = obj.Name:lower()
+                if n:find("wardrobe") or n:find("closet") or n:find("locker") or n:find("hide") then
+                    local hidden = obj:FindFirstChild("HiddenPlayer", true)
+                    local isHiding = hidden and hidden.Value == LocalPlayer.Character
+                    for _, p in ipairs(obj:GetDescendants()) do
+                        if p:IsA("BasePart") then
+                            if vfx.saved[p] == nil then vfx.saved[p] = p.Transparency end
+                            p.Transparency = (vfx.enabled and isHiding) and vfx.transparency or vfx.saved[p]
+                        end
+                    end
+                end
+            end
+        end
+    end
 
 -- [FIX-3] VfxTransparentHiding
 VfxBox:AddToggle("VfxTransparentHiding", {
