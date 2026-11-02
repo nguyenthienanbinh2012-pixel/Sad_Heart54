@@ -327,17 +327,28 @@ local MineBox = MiscTab:AddLeftGroupbox("The Mine")
 
 task.spawn(function()
     task.wait(0.6)
-    local function ReplaceIcon(gb, id)
+    local function ReplaceIcon(gb, glyph)
         for _, d in gb:GetDescendants() do
             if d:IsA("ImageLabel") and (d.Name == "Icon" or d.Name == "IconLabel" or d.Name == "Logo") then
-                d.Image = id
-                d.ImageColor3 = Color3.fromRGB(255, 255, 255)
+                d.Visible = false
+                d.ImageTransparency = 1
+                local L = Instance.new("TextLabel")
+                L.Name = "GlyphIcon"
+                L.BackgroundTransparency = 1
+                L.Size = d.Size
+                L.Position = d.Position
+                L.AnchorPoint = d.AnchorPoint
+                L.Font = Enum.Font.GothamBold
+                L.TextSize = 14
+                L.TextColor3 = Color3.fromRGB(255, 255, 255)
+                L.Text = glyph
+                L.Parent = d.Parent
                 return
             end
         end
     end
-    ReplaceIcon(HotelsBox, "rbxassetid://6031075936")
-    ReplaceIcon(MineBox, "rbxassetid://6031091004")
+    ReplaceIcon(HotelsBox, "HOTEL")
+    ReplaceIcon(MineBox, "MINE")
 end)
 
 local VisualTab = FindVisualTab()
