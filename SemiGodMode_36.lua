@@ -294,18 +294,21 @@ local MiscTab = FindMiscTab()
 local HotelsBox = MiscTab:AddRightGroupbox("Hotels","building")
 local MineBox = MiscTab:AddLeftGroupbox("The Mine","cave")
 
--- [FIX-C] BẢNG ENTITY_CONFIG + NO_HIDE
+-- ===== AUTO HOTEL (fixed) =====
+local RED = "#FF3232"
+
+-- Whitelist entity được phép trốn + blacklist entity cùi
 local ENTITY_CONFIG = {
-    { key = "rush",            display = "Rush",             wsName = "Rush",             range = 60  },
-    { key = "ambush",          display = "Ambush",           wsName = "Ambush",           range = 100 },
-    { key = "blizt",           display = "Blizt",            wsName = "BackdoorRush",     range = 60  },
-    { key = "a60",             display = "A-60",             wsName = "A-60",             range = 90  },
-    { key = "a120",            display = "A-120",            wsName = "A-120",            range = 60  },
-    { key = "blash",           display = "Blash",            wsName = "Blash",            range = 100 },
-    { key = "glitched_ambush", display = "Glitched Ambush",  wsName = "Glitched Ambush",  range = 100 },
-    { key = "ar0xmbush",       display = "AR0xMBUSH",        wsName = "AR0xMBUSH",        range = 170 },
-    { key = "glitched_rush",   display = "Glitched Rush",    wsName = "Glitched Rush",    range = 100 },
-    { key = "rniushcg",        display = "RNIUSHCg==",       wsName = "RNIUSHCg==",       range = 100 },
+    { key = "rush",            wsName = "Rush",             range = 60  },
+    { key = "ambush",          wsName = "Ambush",           range = 100 },
+    { key = "blizt",           wsName = "BackdoorRush",     range = 60  },
+    { key = "a60",             wsName = "A-60",             range = 90  },
+    { key = "a120",            wsName = "A-120",            range = 60  },
+    { key = "blash",           wsName = "Blash",            range = 100 },
+    { key = "glitched_ambush", wsName = "Glitched Ambush",  range = 100 },
+    { key = "ar0xmbush",       wsName = "AR0xMBUSH",        range = 170 },
+    { key = "glitched_rush",   wsName = "Glitched Rush",    range = 100 },
+    { key = "rniushcg",        wsName = "RNIUSHCg==",       range = 100 },
 }
 
 local NO_HIDE = {
@@ -315,51 +318,6 @@ local NO_HIDE = {
     "seekfloodline", "seekingwall", "chandelierobstruction",
 }
 
--- [FIX-A] THAY THẾ KHỐI AUTO HOTEL
--- ===== AUTO HOTEL (xịn - state machine) =====
-local RED = "#FF3232"
-local HotelBox = MiscTab:AddLeftGroupbox("Auto Hotel")
-
-local AH = {
-    Running = false,
-    State = "Idle",
-    LastFire = 0,
-    LastDoor = nil,
-    UseCustomRanges = false,
-    Ranges = {
-        rush = 60, ambush = 100, blizt = 60, a60 = 90, a120 = 60,
-        blash = 100, glitched_ambush = 100, ar0xmbush = 170,
-        glitched_rush = 100, rniushcg = 100,
-    },
-    _cache = { t = 0, entity = nil, dist = math.huge, key = nil },
-    _tickAcc = 0,
-}
-
-local function AH_GetRoomData()
-    local GD = ReplicatedStorage:FindFirstChild("GameData")
-    local LR = GD and GD:FindFirstChild("LatestRoom")
-    return LR and LR.Value or 0
-end
-
-local function AH_GetNextDoor()
-    local GD = ReplicatedStorage:FindFirstChild("GameData")
-    local LR = GD and GD:FindFirstChild("LatestRoom")
-    if not LR then return nil end
-    local Start, Best, BestNum = LR.Value, nil, math.huge
-    for _, Obj in ipairs(Workspace:GetDescendants()) do
-        if Obj.Name == "Door" and Obj:IsA("Model") then
-            local Open = Obj:GetAttribute("Open")
-            if Open == false or Open == nil then
-                local Num = tonumber(Obj.Parent and Obj.Parent.Name)
-                if Num and Num > Start and Num < BestNum then
-                    Best, BestNum = Obj, Num
-                end
-            end
-        end
-    end
-    return Best
-end
-
 local NAME_TO_KEY = {
     ["Rush"] = "rush", ["Ambush"] = "ambush",
     ["BackdoorRush"] = "blizt", ["A-60"] = "a60", ["A-120"] = "a120",
@@ -368,18 +326,39 @@ local NAME_TO_KEY = {
     ["RNIUSHCg=="] = "rniushcg",
 }
 
-local function AH_GetEntityRange(name)
-    local key = NAME_TO_KEY[name]
-    if not key then return nil end
-    if AH.UseCustomRanges then
-        return AH.Ranges[key]
+-- HotelBox đã được tạo sẵn phía trên → KHÔNG tạo lại
+local AH = {
+    Running  = false,
+    State    = "Idle",
+    LastFire = 0,
+    _cache   = { t = 0, entity = nil, dist = math.huge },
+}
+
+-------------------------------------------------
+-- Lấy cửa đúng từ CurrentRooms[LatestRoom]
+-------------------------------------------------
+local function AH_GetNextDoor()
+    local GD = ReplicatedStorage:FindFirstChild("GameData")
+    local LR = GD and GD:FindFirstChild("LatestRoom")
+    if not LR then return nil end
+    local CR = Workspace:FindFirstChild("CurrentRooms")
+    if not CR then return nil end
+
+    local room = CR:FindFirstChild(tostring(LR.Value))
+    if not room and LR.Value == 0 then
+        room = CR:FindFirstChild("1") or CR:FindFirstChild("0")
     end
-    for _, cfg in ipairs(ENTITY_CONFIG) do
-        if cfg.wsName == name then return cfg.range end
-    end
-    return nil
+    if not room then return nil end
+
+    local door = room:FindFirstChild("Door") or room:FindFirstChild("Door", true)
+    if not door then return nil end
+    if door:GetAttribute("Open") == true then return nil end
+    return door, room
 end
 
+-------------------------------------------------
+-- Nhận diện entity whitelist / blacklist
+-------------------------------------------------
 local function AH_IsHideEntity(name)
     local lower = tostring(name or ""):lower()
     for _, n in ipairs(NO_HIDE) do
@@ -389,29 +368,29 @@ local function AH_IsHideEntity(name)
     end
     for _, cfg in ipairs(ENTITY_CONFIG) do
         if name == cfg.wsName then
-            return true, cfg.key
+            return true, cfg.key, cfg.range
         end
     end
     return false
 end
 
 local function AH_GetNearestHideEntity()
-    if tick() - (AH._cache.t or 0) < 0.3 and AH._cache.entity then
-        return AH._cache.entity, AH._cache.dist, AH._cache.key
+    if tick() - (AH._cache.t or 0) < 0.25 and AH._cache.entity then
+        return AH._cache.entity, AH._cache.dist
     end
     local Char = LocalPlayer.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
     if not Root then return nil end
+
     local container = Workspace:FindFirstChild("CurrentRooms") or Workspace
-    local best, bestDist, bestKey = nil, math.huge, nil
+    local best, bestDist = nil, math.huge
     for _, Obj in ipairs(container:GetDescendants()) do
         if Obj:IsA("Model") and Obj.PrimaryPart then
-            local ok, key = AH_IsHideEntity(Obj.Name)
+            local ok, _, range = AH_IsHideEntity(Obj.Name)
             if ok then
-                local range = AH_GetEntityRange(Obj.Name) or 60
                 local d = (Obj.PrimaryPart.Position - Root.Position).Magnitude
-                if d <= range and d < bestDist then
-                    best, bestDist, bestKey = Obj, d, key
+                if d <= (range or 60) and d < bestDist then
+                    best, bestDist = Obj, d
                 end
             end
         end
@@ -419,117 +398,144 @@ local function AH_GetNearestHideEntity()
     AH._cache.t = tick()
     AH._cache.entity = best
     AH._cache.dist = bestDist
-    AH._cache.key = bestKey
-    return best, bestDist, bestKey
+    return best, bestDist
 end
 
+-------------------------------------------------
+-- Tìm tủ trốn (ưu tiên Prompt Enabled)
+-------------------------------------------------
 local function AH_GetNearestHidingSpot()
     local Char = LocalPlayer.Character
     local Root = Char and Char:FindFirstChild("HumanoidRootPart")
     if not Root then return nil, nil end
-    local best, bestDist, bestPrompt = nil, 30, nil
-    local farBest, farDist, farPrompt = nil, 100, nil
+
+    local best, bestDist, bestPrompt = nil, 35, nil
     local container = Workspace:FindFirstChild("CurrentRooms") or Workspace
     for _, Obj in ipairs(container:GetDescendants()) do
         if Obj:IsA("Model") then
             local n = Obj.Name:lower()
-            if n:find("wardrobe") or n:find("closet") or n:find("locker") or n:find("bed") or n:find("hide") then
+            if n:find("wardrobe") or n:find("closet") or n:find("locker")
+                or n:find("bed") or n:find("hide") or n:find("cabinet") or n:find("drawer") then
                 local pp = Obj.PrimaryPart or Obj:FindFirstChildWhichIsA("BasePart")
                 if pp then
                     local d = (pp.Position - Root.Position).Magnitude
-                    local prompt = Obj:FindFirstChild("HidePrompt", true) or Obj:FindFirstChild("HidingPrompt", true)
-                    if not prompt then
-                        for _, D in ipairs(Obj:GetDescendants()) do
-                            if D:IsA("ProximityPrompt") and (D.Name == "HidePrompt" or D.Name == "HidingPrompt") then
-                                prompt = D
-                                break
+                    if d < bestDist then
+                        local prompt = Obj:FindFirstChild("HidePrompt", true)
+                            or Obj:FindFirstChild("HidingPrompt", true)
+                            or Obj:FindFirstChild("EnterPrompt", true)
+                        if not prompt then
+                            for _, D in ipairs(Obj:GetDescendants()) do
+                                if D:IsA("ProximityPrompt") and D.Enabled then
+                                    prompt = D
+                                    break
+                                end
                             end
                         end
-                    end
-                    local enabled = prompt and prompt.Enabled
-                    if d < bestDist then
-                        if enabled or not bestPrompt then
+                        if prompt and prompt.Enabled then
                             best, bestDist, bestPrompt = Obj, d, prompt
-                        end
-                    end
-                    if d < farDist then
-                        if enabled or not farPrompt then
-                            farBest, farDist, farPrompt = Obj, d, prompt
+                        elseif not bestPrompt then
+                            best, bestDist, bestPrompt = Obj, d, prompt
                         end
                     end
                 end
             end
         end
     end
-    if best then
-        return best, bestPrompt
-    end
-    return farBest, farPrompt
+    return best, bestPrompt
 end
 
+-------------------------------------------------
+-- Fire hide (teleport gần prompt rồi kích)
+-------------------------------------------------
 local function AH_FireHide()
     local Spot, Prompt = AH_GetNearestHidingSpot()
+    if not Spot then return false end
+
+    local Char = LocalPlayer.Character
+    if not Char then return false end
+
+    -- Đứng gần prompt \~2 studs
+    local targetCF
+    if Prompt and Prompt.Parent and Prompt.Parent:IsA("BasePart") then
+        targetCF = Prompt.Parent.CFrame * CFrame.new(0, 0, -2)
+    else
+        local pp = Spot.PrimaryPart or Spot:FindFirstChildWhichIsA("BasePart")
+        if pp then targetCF = pp.CFrame * CFrame.new(0, 0, -2) end
+    end
+    if targetCF then
+        pcall(function() Char:PivotTo(targetCF) end)
+        task.wait(0.15)
+    end
+
     if Prompt then
         pcall(function()
             if fireproximityprompt then
                 fireproximityprompt(Prompt)
             else
                 Prompt:InputHoldBegin()
-                task.wait(Prompt.HoldDuration or 0.1)
+                task.wait(Prompt.HoldDuration or 0.2)
                 Prompt:InputHoldEnd()
             end
         end)
         return true
     end
-    if Spot then
-        local Char = LocalPlayer.Character
-        if Char then
-            pcall(function() Char:PivotTo(Spot:GetPivot()) end)
-            return true
-        end
-    end
     return false
 end
 
-local function AH_FireDoor(Door)
+-------------------------------------------------
+-- Mở cửa + xử lý chìa khoá
+-------------------------------------------------
+local function AH_FireDoor(Door, Room)
     if not Door then return end
-    local clientOpen = RF():FindFirstChild("ClientOpen") or RF():FindFirstChild("ClientOpen", true)
-    if clientOpen then
-        pcall(function() clientOpen:FireServer() end)
-    end
-    local prompt = Door:FindFirstChild("OpenPrompt", true) or Door:FindFirstChild("DoorPrompt", true)
-    if not prompt then
-        for _, D in ipairs(Door:GetDescendants()) do
-            if D:IsA("ProximityPrompt") then
-                prompt = D
-                break
+
+    -- 1) Nếu cửa bị khoá → tìm KeyObtain trong room
+    local lock = Door:FindFirstChild("Lock", true)
+    local unlockPrompt = lock and lock:FindFirstChild("UnlockPrompt")
+    if unlockPrompt and unlockPrompt.Enabled then
+        local key = Room and (Room:FindFirstChild("KeyObtain", true) or Room:FindFirstChild("Key", true))
+        if key then
+            local hit = key:FindFirstChild("Hitbox") or key:FindFirstChildWhichIsA("BasePart")
+            if hit then
+                pcall(function() LocalPlayer.Character:PivotTo(CFrame.new(hit.Position + Vector3.new(0, 3, 0))) end)
+                task.wait(0.2)
+                local keyPrompt = key:FindFirstChild("ModulePrompt", true) or key:FindFirstChildWhichIsA("ProximityPrompt", true)
+                if keyPrompt then
+                    pcall(function()
+                        if fireproximityprompt then fireproximityprompt(keyPrompt)
+                        else
+                            keyPrompt:InputHoldBegin()
+                            task.wait(keyPrompt.HoldDuration or 0.2)
+                            keyPrompt:InputHoldEnd()
+                        end
+                    end)
+                    task.wait(0.3)
+                end
             end
         end
-    end
-    if prompt then
+        -- Unlock
         pcall(function()
-            if fireproximityprompt then
-                fireproximityprompt(prompt)
+            if fireproximityprompt then fireproximityprompt(unlockPrompt)
             else
-                prompt:InputHoldBegin()
-                task.wait(prompt.HoldDuration or 0.1)
-                prompt:InputHoldEnd()
+                unlockPrompt:InputHoldBegin()
+                task.wait(unlockPrompt.HoldDuration or 0.2)
+                unlockPrompt:InputHoldEnd()
             end
         end)
+        task.wait(0.25)
     end
-    local Char = LocalPlayer.Character
-    local Root = Char and Char:FindFirstChild("HumanoidRootPart")
-    local doorPP = Door.PrimaryPart or Door:FindFirstChildWhichIsA("BasePart")
-    if Root and doorPP then
-        local d = (Root.Position - doorPP.Position).Magnitude
-        if d > 8 then
-            pcall(function()
-                Char:PivotTo(doorPP.CFrame * CFrame.new(0, 0, 3))
-            end)
-        end
+
+    -- 2) Mở cửa bằng ClientOpen (không cần đứng sát)
+    local clientOpen = Door:FindFirstChild("ClientOpen")
+        or Door:FindFirstChild("ClientOpen", true)
+        or (RF() and (RF():FindFirstChild("ClientOpen") or RF():FindFirstChild("ClientOpen", true)))
+    if clientOpen and clientOpen:IsA("RemoteEvent") then
+        pcall(function() clientOpen:FireServer() end)
     end
 end
 
+-------------------------------------------------
+-- Kiểm tra đang trốn
+-------------------------------------------------
 local function AH_IsHiding()
     local Char = LocalPlayer.Character
     if not Char then return false end
@@ -560,51 +566,24 @@ local function AH_Unhide()
     if camLock then
         pcall(function() camLock:FireServer() end)
     end
-    local Char = LocalPlayer.Character
-    if Char and AH_IsHiding() then
-        local Spot = select(1, AH_GetNearestHidingSpot())
-        if Spot then
-            local pp = Spot.PrimaryPart or Spot:FindFirstChildWhichIsA("BasePart")
-            if pp then
-                pcall(function() Char:PivotTo(pp.CFrame * CFrame.new(0, 0, 3)) end)
-            end
-        end
-    end
 end
 
-local function AH_NearMiss(Entity, Root)
-    if not Entity or not Entity.PrimaryPart or not Root then return end
-    local dir = (Root.Position - Entity.PrimaryPart.Position)
-    if dir.Magnitude < 0.1 then dir = Vector3.new(1, 0, 0) else dir = dir.Unit end
-    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if hum then
-        task.spawn(function()
-            local t0 = tick()
-            while tick() - t0 < 0.4 do
-                hum:Move(dir * 16, false)
-                task.wait()
-            end
-        end)
-    end
-    notify("Không tìm thấy tủ, đang né...", 1.5)
-    local Spot = select(1, AH_GetNearestHidingSpot())
-    if Spot then
-        pcall(function() LocalPlayer.Character:PivotTo(Spot:GetPivot()) end)
-    end
-end
-
+-------------------------------------------------
+-- Tick chính
+-------------------------------------------------
 local function AH_Tick()
     if not AH.Running then return end
     local Char = LocalPlayer.Character
     if not Char then return end
-    local Root = Char:FindFirstChild("HumanoidRootPart")
 
+    -- Chết → revive
     if LocalPlayer:GetAttribute("Alive") == false then
         AH_TryRevive()
         AH.State = "Revive"
         return
     end
 
+    -- Đang trốn → chờ entity đi
     if AH_IsHiding() then
         local E = AH_GetNearestHideEntity()
         if not E then
@@ -616,23 +595,31 @@ local function AH_Tick()
         return
     end
 
-    local E, dist, key = AH_GetNearestHideEntity()
+    -- Có entity whitelist gần → trốn (thử tối đa 2 lần)
+    local E = AH_GetNearestHideEntity()
     if E then
-        if AH_FireHide() then
-            AH.State = "Hide"
-            return
-        else
-            AH_NearMiss(E, Root)
-            AH.State = "Wait"
-            return
+        local ok = false
+        for _ = 1, 2 do
+            if AH_FireHide() then
+                task.wait(0.6)
+                if AH_IsHiding() then
+                    ok = true
+                    break
+                end
+            else
+                break
+            end
         end
+        AH.State = ok and "Hide" or "Wait"
+        return
     end
 
-    if tick() - AH.LastFire > 0.15 then
+    -- Mở cửa kế tiếp
+    if tick() - AH.LastFire > 0.35 then
         AH.LastFire = tick()
-        local Door = AH_GetNextDoor()
+        local Door, Room = AH_GetNextDoor()
         if Door then
-            AH_FireDoor(Door)
+            AH_FireDoor(Door, Room)
             AH.State = "OpenDoor"
         else
             AH.State = "Idle"
@@ -640,104 +627,45 @@ local function AH_Tick()
     end
 end
 
+-------------------------------------------------
+-- UI (chỉ Add vào HotelBox đã có)
+-------------------------------------------------
 HotelBox:AddToggle("AP_AutoHotel", {
-    Text = "Auto Hotel",
+    Text = "<font color='" .. RED .. "'>Auto Hotel</font>",
     Default = false,
-    Tooltip = "Tự Màn Hotel.",
+    Tooltip = "Tự động mở cửa + trốn entity (Rush/Ambush/...)",
 }):OnChanged(function(v)
     AH.Running = v
     if v then
-        notify("Auto Hotel: BẬT", 2)
-    end
-end)
-
--- [FIX-B] UI SLIDER RANGES (chèn sau AP_AutoHotel)
-HotelBox:AddLabel("Auto Hotel - Entity Ranges", true)
-HotelBox:AddToggle("AH_UseCustomRanges", {
-    Text = "Use Custom Ranges",
-    Default = false,
-    Tooltip = "Bật để dùng slider bên dưới thay vì range mặc định.",
-}):OnChanged(function(v)
-    AH.UseCustomRanges = v
-end)
-HotelBox:AddDivider()
-for _, cfg in ipairs(ENTITY_CONFIG) do
-    HotelBox:AddSlider("AH_Range_" .. cfg.key, {
-        Text = cfg.display .. " Range",
-        Min = 20, Max = 250, Default = cfg.range,
-        Rounding = 0, Compact = true,
-    }):OnChanged(function(v)
-        AH.Ranges[cfg.key] = v
-    end)
-end
-
-task.spawn(function()
-    while true do
-        task.wait(0.1)
-        if AH.Running then
-            pcall(AH_Tick)
-        end
+        notify("<font color='" .. RED .. "'>Auto Hotel: BẬT</font>", 2)
     end
 end)
 
 HotelBox:AddButton({
-    Text = "Teleport Next Door",
+    Text = "<font color='" .. RED .. "'>Teleport Next Door</font>",
     DoubleClick = false,
     Func = function()
         local Door = AH_GetNextDoor()
         local Char = LocalPlayer.Character
         if Door and Char then
-            Char:PivotTo(Door:GetPivot())
+            local pp = Door.PrimaryPart or Door:FindFirstChildWhichIsA("BasePart")
+            if pp then
+                -- Đứng LÙI 3 studs trước cửa, không đứng giữa cửa
+                Char:PivotTo(pp.CFrame * CFrame.new(0, 0, 3))
+            end
         end
     end,
 })
--- ===== END AUTO HOTEL =====
+
 task.spawn(function()
-task.wait(0.6)
-local function ReplaceIcon(gb, glyph)
-for _, d in gb:GetDescendants() do
-if d:IsA("ImageLabel") and (d.Name == "Icon" or d.Name == "IconLabel" or d.Name == "Logo") then
-d.Visible = false
-d.ImageTransparency = 1
-local L = Instance.new("TextLabel")
-L.Name = "GlyphIcon"
-L.BackgroundTransparency = 1
-L.Size = d.Size
-L.Position = d.Position
-L.AnchorPoint = d.AnchorPoint
-L.Font = Enum.Font.GothamBold
-L.TextSize = 14
-L.TextColor3 = Color3.fromRGB(255, 255, 255)
-L.Text = glyph
-L.Parent = d.Parent
-return
-end
-end
-end
-ReplaceIcon(HotelsBox, "HOTEL")
-ReplaceIcon(MineBox, "MINE")
-end)
-local VisualTab = FindVisualTab()
-if VisualTab then
-local VfxBox = VisualTab:AddRightGroupbox("Effects & Protection", "eye")
-local vfx = { enabled = false, transparency = 0.5, saved = {} }
-local function vfxApplyHiding()
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Model") then
-            local n = obj.Name:lower()
-            if n:find("wardrobe") or n:find("closet") or n:find("locker") or n:find("hide") then
-                local hidden = obj:FindFirstChild("HiddenPlayer", true)
-                local isHiding = hidden and hidden.Value == LocalPlayer.Character
-                for _, p in ipairs(obj:GetDescendants()) do
-                    if p:IsA("BasePart") then
-                        if vfx.saved[p] == nil then vfx.saved[p] = p.Transparency end
-                        p.Transparency = (vfx.enabled and isHiding) and vfx.transparency or vfx.saved[p]
-                    end
-                end
-            end
+    while true do
+        task.wait(0.12)
+        if AH.Running then
+            pcall(AH_Tick)
         end
     end
-end
+end)
+-- ===== END AUTO HOTEL =====
 
 -- [FIX-3] VfxTransparentHiding
 VfxBox:AddToggle("VfxTransparentHiding", {
